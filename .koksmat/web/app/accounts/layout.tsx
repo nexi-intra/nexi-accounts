@@ -64,9 +64,7 @@ export default function Layout(props: { children: any }) {
         </div>
       </div>
       <div className="flex min-h-[calc(100vh-80px)]">
-        <div className="hidden md:block">
-          <AppLeftRail {...leftRailApps} />
-        </div>
+
         <div className="grow bg-slate-50 dark:bg-slate-800"></div>
         <div className="container p-8">{children}</div>
         <div className="grow  bg-slate-50  dark:bg-slate-800"></div>

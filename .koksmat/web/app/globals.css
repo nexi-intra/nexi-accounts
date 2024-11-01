@@ -74,3 +74,17 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Add this CSS to make the editor resemble a regular input field */
+.editor-container .monaco-editor {
+  padding: 0 !important;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  overflow: visible;
+}
+
+.editor-container .monaco-editor .margin,
+.editor-container .monaco-editor .view-lines {
+  padding: 0 !important;
+}
+
