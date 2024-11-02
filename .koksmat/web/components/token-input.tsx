@@ -1,169 +1,254 @@
-'use client'
+"use client"
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import React, { useState, useEffect } from "react"
+import { FaCircle, FaSquare, FaStar } from "react-icons/fa"
+import { ComponentDoc } from './component-documentation-hub'
+import TokenInputInternal from "./token-input-internal"
 
-type Token = string | { key: string; value: string }
+interface PropertyValue {
+  value: string
+  icon: React.ReactNode
+  color: string
+}
+
+interface Property {
+  name: string
+  values: PropertyValue[]
+}
+
+interface ErrorDetail {
+  token: string
+  message: string
+}
 
 interface TokenInputProps {
-  debug?: boolean
-  properties: Array<{
-    propertyKeyName: string
-    propertyValue: (value: string) => string[]
-  }>
-  onTokenUpdate: (tokens: Token[]) => void
+  properties: Property[]
+  value: string
+  onChange: (
+    value: string,
+    hasErrors: boolean,
+    errors: ErrorDetail[]
+  ) => void
+  mode?: 'view' | 'new' | 'edit'
+  className?: string
 }
 
-const useTokenInput = (properties: TokenInputProps['properties'], onTokenUpdate: TokenInputProps['onTokenUpdate']) => {
-  const [input, setInput] = useState('')
-  const [tokens, setTokens] = useState<Token[]>([])
-  const [mode, setMode] = useState<'empty' | 'capturing' | 'picking'>('empty')
-  const [currentProperty, setCurrentProperty] = useState<string | null>(null)
-  const [cursorPosition, setCursorPosition] = useState(0)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  const parseTokens = useCallback((value: string) => {
-    const regex = /[^\s"]+|"([^"]*)"/gi
-    const tokens: Token[] = []
-    let match
-    let isProperty = false
-    let propertyKey = ''
-
-    while ((match = regex.exec(value)) !== null) {
-      const token = match[1] || match[0]
-      if (isProperty) {
-        tokens.push({ key: propertyKey, value: token })
-        isProperty = false
-      } else if (token.endsWith(':')) {
-        propertyKey = token.slice(0, -1)
-        isProperty = true
-      } else {
-        tokens.push(token)
-      }
-    }
-
-    return tokens
-  }, [])
-
-  const updateTokens = useCallback((newInput: string, newCursorPosition: number) => {
-    const newTokens = parseTokens(newInput)
-
-    // Check if the tokens have actually changed
-    const tokensChanged = JSON.stringify(newTokens) !== JSON.stringify(tokens)
-
-    if (tokensChanged) {
-      setTokens(newTokens)
-      onTokenUpdate(newTokens)
-    }
-
-    // Determine the current token based on cursor position
-    let currentTokenStart = 0
-    let currentTokenEnd = newInput.length
-    let isInProperty = false
-
-    for (let i = 0; i < newInput.length; i++) {
-      if (newInput[i] === ' ' || newInput[i] === '"') {
-        if (i < newCursorPosition) {
-          currentTokenStart = i + 1
-        } else {
-          currentTokenEnd = i
-          break
-        }
-      }
-      if (newInput[i] === ':') {
-        isInProperty = true
-        if (i >= newCursorPosition) {
-          currentTokenEnd = i
-          break
-        }
-      }
-    }
-
-    const currentToken = newInput.slice(currentTokenStart, currentTokenEnd)
-
-    if (currentToken === '') {
-      setMode('empty')
-      setCurrentProperty(null)
-    } else if (isInProperty) {
-      setMode('picking')
-      setCurrentProperty(newInput.slice(0, currentTokenStart - 1).split(' ').pop() || null)
-    } else {
-      setMode('capturing')
-      setCurrentProperty(null)
-    }
-  }, [parseTokens, onTokenUpdate, tokens])
-
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const newInput = e.target.value
-    const newCursorPosition = e.target.selectionStart || 0
-    setInput(newInput)
-    setCursorPosition(newCursorPosition)
-    updateTokens(newInput, newCursorPosition)
-  }, [updateTokens])
-
-  const handleKeyUp = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    setCursorPosition(e.currentTarget.selectionStart || 0)
-  }, [])
-
-  const handleClick = useCallback(() => {
-    setCursorPosition(inputRef.current?.selectionStart || 0)
-  }, [])
+/**
+ * TokenInput Component
+ * 
+ * This component is a wrapper around TokenInputInternal, providing a simplified interface
+ * for inputting and managing tokens with predefined properties.
+ * 
+ * @param properties - An array of Property objects defining the available tokens
+ * @param value - The current value of the input
+ * @param onChange - Callback function triggered when the input value changes
+ * @param mode - The current mode of the component ('view', 'new', or 'edit')
+ * @param className - Additional CSS classes to apply to the component
+ */
+const TokenInput: React.FC<TokenInputProps> = ({
+  properties,
+  value,
+  onChange,
+  mode = 'edit',
+  className = ""
+}) => {
+  const [internalValue, setInternalValue] = useState(value)
 
   useEffect(() => {
-    updateTokens(input, cursorPosition)
-  }, [cursorPosition, input, updateTokens])
+    setInternalValue(value)
+  }, [value])
 
-  const suggestions = useMemo(() => {
-    const currentTokenStart = input.lastIndexOf(' ', cursorPosition - 1) + 1
-    const currentTokenEnd = input.indexOf(' ', cursorPosition)
-    const currentToken = input.slice(currentTokenStart, currentTokenEnd > -1 ? currentTokenEnd : undefined).trim()
-
-    if (mode === 'picking' && currentProperty) {
-      const property = properties.find(p => p.propertyKeyName === currentProperty)
-      return property ? property.propertyValue(currentToken) : []
-    } else if (mode === 'capturing') {
-      return properties
-        .map(p => p.propertyKeyName)
-        .filter(p => p.startsWith(currentToken) && p !== currentToken)
-    }
-    return []
-  }, [mode, currentProperty, properties, input, cursorPosition])
-
-  return { input, tokens, mode, currentProperty, handleInputChange, handleKeyUp, handleClick, suggestions, inputRef }
-}
-
-export default function InputToken({ debug = false, properties, onTokenUpdate }: TokenInputProps) {
-  const { input, tokens, mode, currentProperty, handleInputChange, handleKeyUp, handleClick, suggestions, inputRef } = useTokenInput(properties, onTokenUpdate)
+  const handleChange = (
+    newValue: string,
+    hasErrors: boolean,
+    errors: ErrorDetail[]
+  ) => {
+    setInternalValue(newValue)
+    onChange(newValue, hasErrors, errors)
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="tokenInput">Token Input</Label>
-        <Input
-          id="tokenInput"
-          ref={inputRef}
-          value={input}
-          onChange={handleInputChange}
-          onKeyUp={handleKeyUp}
-          onClick={handleClick}
-          placeholder="Enter tokens and properties..."
-          className="w-full"
-        />
+    <TokenInputInternal
+      properties={properties}
+      value={internalValue}
+      onChange={handleChange}
+
+
+    />
+  )
+}
+
+export default TokenInput
+
+// Example usage and documentation
+const ExampleComponent: React.FC = () => {
+  const [inputValue, setInputValue] = useState<string>(
+    "color:blue shape:square shape:star other"
+  )
+  const [hasErrors, setHasErrors] = useState<boolean>(false)
+  const [errors, setErrors] = useState<ErrorDetail[]>([])
+
+  const properties = [
+    {
+      name: "color",
+      values: [
+        { value: "red", icon: <FaCircle color="red" />, color: "red" },
+        { value: "green", icon: <FaCircle color="green" />, color: "green" },
+        { value: "blue", icon: <FaCircle color="blue" />, color: "blue" },
+        { value: "yellow", icon: <FaCircle color="yellow" />, color: "yellow" },
+        { value: "purple", icon: <FaCircle color="purple" />, color: "purple" },
+      ],
+    },
+    {
+      name: "shape",
+      values: [
+        { value: "circle", icon: <FaCircle />, color: "black" },
+        { value: "square", icon: <FaSquare />, color: "black" },
+        { value: "star", icon: <FaStar />, color: "black" },
+      ],
+    },
+    {
+      name: "style",
+      values: [
+        {
+          value: "bold",
+          icon: <span className="font-bold">B</span>,
+          color: "black",
+        },
+        {
+          value: "italic",
+          icon: <span className="italic">I</span>,
+          color: "black",
+        },
+        {
+          value: "underline",
+          icon: <span className="underline">U</span>,
+          color: "black",
+        },
+      ],
+    },
+  ]
+
+  const handleTokenInputChange = (
+    value: string,
+    hasErrors: boolean,
+    errors: ErrorDetail[]
+  ) => {
+    setInputValue(value)
+    setHasErrors(hasErrors)
+    setErrors(errors)
+  }
+
+  return (
+    <div className="container mx-auto mt-10 p-4">
+      <h1 className="text-2xl font-semibold mb-4">Token Input Component</h1>
+      <TokenInput
+        properties={properties}
+        value={inputValue}
+        onChange={handleTokenInputChange}
+        mode="edit"
+        className="mb-4"
+      />
+      <div className="mt-4">
+        <h2 className="text-xl font-semibold">onChange Data:</h2>
+        <pre className="bg-gray-100 p-4 rounded">
+          {JSON.stringify({ value: inputValue, hasErrors, errors }, null, 2)}
+        </pre>
       </div>
-      {suggestions.length > 0 && (
-        <div className="text-sm text-muted-foreground">
-          Suggestions: {suggestions.join(', ')}
-        </div>
-      )}
-      {debug && (
-        <div className="p-4 bg-muted rounded-md">
-          <h3 className="text-sm font-semibold mb-2">Debug Information</h3>
-          <pre className="text-xs whitespace-pre-wrap">
-            {JSON.stringify({ tokens, mode, currentProperty }, null, 2)}
-          </pre>
-        </div>
-      )}
     </div>
   )
 }
+
+export const examplesTokenInput: ComponentDoc[] = [
+  {
+    id: 'TokenInput',
+    name: 'TokenInput',
+    description: 'A component for inputting and managing tokens with predefined properties.',
+    usage: `
+import React, { useState } from 'react'
+import TokenInput from '@/components/token-input'
+import { FaCircle, FaSquare, FaStar } from 'react-icons/fa'
+
+const ExampleComponent: React.FC = () => {
+  const [inputValue, setInputValue] = useState<string>(
+    "color:blue shape:square shape:star other"
+  )
+  const [hasErrors, setHasErrors] = useState<boolean>(false)
+  const [errors, setErrors] = useState<ErrorDetail[]>([])
+
+  const properties = [
+    {
+      name: "color",
+      values: [
+        { value: "red", icon: <FaCircle color="red" />, color: "red" },
+        { value: "green", icon: <FaCircle color="green" />, color: "green" },
+        { value: "blue", icon: <FaCircle color="blue" />, color: "blue" },
+        { value: "yellow", icon: <FaCircle color="yellow" />, color: "yellow" },
+        { value: "purple", icon: <FaCircle color="purple" />, color: "purple" },
+      ],
+    },
+    {
+      name: "shape",
+      values: [
+        { value: "circle", icon: <FaCircle />, color: "black" },
+        { value: "square", icon: <FaSquare />, color: "black" },
+        { value: "star", icon: <FaStar />, color: "black" },
+      ],
+    },
+    {
+      name: "style",
+      values: [
+        {
+          value: "bold",
+          icon: <span className="font-bold">B</span>,
+          color: "black",
+        },
+        {
+          value: "italic",
+          icon: <span className="italic">I</span>,
+          color: "black",
+        },
+        {
+          value: "underline",
+          icon: <span className="underline">U</span>,
+          color: "black",
+        },
+      ],
+    },
+  ]
+
+  const handleTokenInputChange = (
+    value: string,
+    hasErrors: boolean,
+    errors: ErrorDetail[]
+  ) => {
+    setInputValue(value)
+    setHasErrors(hasErrors)
+    setErrors(errors)
+  }
+
+  return (
+    <div className="container mx-auto mt-10 p-4">
+      <h1 className="text-2xl font-semibold mb-4">Token Input Component</h1>
+      <TokenInput
+        properties={properties}
+        value={inputValue}
+        onChange={handleTokenInputChange}
+        mode="edit"
+        className="mb-4"
+      />
+      <div className="mt-4">
+        <h2 className="text-xl font-semibold">onChange Data:</h2>
+        <pre className="bg-gray-100 p-4 rounded">
+          {JSON.stringify({ value: inputValue, hasErrors, errors }, null, 2)}
+        </pre>
+      </div>
+    </div>
+  )
+}
+    `,
+    example: (
+      <ExampleComponent />
+    ),
+  }
+]
